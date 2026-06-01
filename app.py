@@ -231,11 +231,11 @@ def leave_records():
         try:
             employee_id = request.args.get('employee_id')
             year = request.args.get('year')
-            
-            if not employee_id or not year:
-                return jsonify({'error': 'employee_id와 year 파라미터가 필요합니다'}), 400
 
-            records = db.list_leave_records(int(employee_id), int(year))
+            records = db.list_leave_records(
+                int(employee_id) if employee_id else None,
+                int(year) if year else None
+            )
             return jsonify({
                 'status': 'success',
                 'records': records
@@ -252,6 +252,9 @@ def leave_records():
             required = ['employee_id', 'start_date', 'end_date', 'days', 'type']
             if not all(field in data for field in required):
                 return jsonify({'error': '필수 필드 누락'}), 400
+
+            if float(data['days']) <= 0:
+                return jsonify({'error': '휴가 일수는 0보다 커야 합니다'}), 400
             
             # DB 저장
             record_id = db.insert_leave_record(
@@ -280,6 +283,77 @@ def leave_records():
             
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/leave-records/<int:record_id>', methods=['PATCH', 'DELETE'])
+def leave_record_detail(record_id):
+    """휴가 기록 상태 변경/삭제"""
+    if request.method == 'PATCH':
+        try:
+            data = request.get_json() or {}
+            status = data.get('status')
+            if status not in {'pending', 'approved', 'rejected', 'cancelled'}:
+                return jsonify({'error': '지원하지 않는 상태입니다'}), 400
+
+            updated = db.update_leave_status(
+                record_id=record_id,
+                status=status,
+                approver_name=data.get('approver_name', '관리자')
+            )
+            if not updated:
+                return jsonify({'error': '휴가 기록을 찾을 수 없습니다'}), 404
+
+            db.log_audit(
+                user_name=data.get('user_name', 'system'),
+                action=f'leave_status:{status}',
+                table_name='leave_records',
+                record_id=record_id,
+                details=json.dumps(data, ensure_ascii=False)
+            )
+            return jsonify({'status': 'success'})
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    try:
+        deleted = db.delete_leave_record(record_id)
+        if not deleted:
+            return jsonify({'error': '휴가 기록을 찾을 수 없습니다'}), 404
+
+        db.log_audit(
+            user_name='system',
+            action='delete',
+            table_name='leave_records',
+            record_id=record_id
+        )
+        return jsonify({'status': 'success'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/leave-summary', methods=['GET'])
+def leave_summary():
+    """직원별 휴가 발생/사용/잔여 요약"""
+    try:
+        year = int(request.args.get('year', datetime.now().year))
+        summary = db.leave_summary(year)
+        return jsonify({
+            'status': 'success',
+            'year': year,
+            'summary': summary,
+            'totals': {
+                'employees': len(summary),
+                'accrued_days': round(sum(item['accrued_days'] for item in summary), 2),
+                'planned_days': round(sum(item['planned_days'] for item in summary), 2),
+                'used_days': round(sum(item['used_days'] for item in summary), 2),
+                'remaining_days': round(sum(item['remaining_days'] for item in summary), 2),
+                'pending_count': sum(item['pending_count'] for item in summary)
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/sync-excel', methods=['POST'])
@@ -333,6 +407,7 @@ def employees():
                 position=data.get('position'),
                 grade=data.get('grade'),
                 step=data.get('step'),
+                department=data.get('department'),
                 join_date=data.get('join_date')
             )
             
