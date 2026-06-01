@@ -240,7 +240,7 @@ class GroCILDatabase:
         conn.commit()
         conn.close()
         
-        print(f"✅ 데이터베이스 초기화 완료: {self.db_path}")
+        print(f"데이터베이스 초기화 완료: {self.db_path}")
     
     def insert_employee(self, name: str, **kwargs) -> int:
         """직원 추가"""
@@ -284,6 +284,59 @@ class GroCILDatabase:
             
         finally:
             conn.close()
+
+    def list_employees(self) -> List[Dict[str, Any]]:
+        """직원 목록 조회"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                SELECT id, name, korean_name, position, grade, step, department,
+                       join_date, status, resignation_date, notes, created_at, updated_at
+                FROM employees
+                ORDER BY status = 'active' DESC, name ASC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+        finally:
+            conn.close()
+
+    def list_leave_records(self, employee_id: Optional[int] = None,
+                           year: Optional[int] = None) -> List[Dict[str, Any]]:
+        """휴가 기록 목록 조회"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            conditions = []
+            values = []
+
+            if employee_id:
+                conditions.append('lr.employee_id = ?')
+                values.append(employee_id)
+
+            if year:
+                conditions.append("strftime('%Y', lr.start_date) = ?")
+                values.append(str(year))
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ''
+            cursor.execute(f'''
+                SELECT lr.id, lr.employee_id, e.name AS employee_name, lr.start_date,
+                       lr.end_date, lr.days, lr.type, lr.reason, lr.status,
+                       lr.approver_name, lr.approval_date, lr.document_path,
+                       lr.notes, lr.created_at, lr.updated_at
+                FROM leave_records lr
+                LEFT JOIN employees e ON e.id = lr.employee_id
+                {where_clause}
+                ORDER BY lr.start_date DESC, lr.id DESC
+            ''', values)
+            return [dict(row) for row in cursor.fetchall()]
+
+        finally:
+            conn.close()
     
     def get_leave_balance(self, employee_id: int, year: int) -> Dict[str, Any]:
         """연차 잔여 현황 조회"""
@@ -322,6 +375,26 @@ class GroCILDatabase:
             conn.commit()
             return cursor.lastrowid
             
+        finally:
+            conn.close()
+
+    def list_documents(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """문서 처리 이력 조회"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                SELECT id, employee_id, filename, file_type, file_size,
+                       related_record_id, related_record_type, uploaded_by,
+                       status, error_message, created_at
+                FROM documents
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+            ''', (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
         finally:
             conn.close()
     
@@ -365,4 +438,4 @@ if __name__ == '__main__':
     conn.commit()
     conn.close()
     
-    print(f"✅ 조직 정보 추가: {db.db_path}")
+    print(f"조직 정보 추가: {db.db_path}")

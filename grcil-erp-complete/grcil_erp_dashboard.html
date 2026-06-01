@@ -391,6 +391,59 @@
             color: var(--danger);
             border-left: 4px solid var(--danger);
         }
+
+        .status-line {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            margin-top: 0.35rem;
+        }
+
+        .status-dot {
+            width: 0.6rem;
+            height: 0.6rem;
+            border-radius: 50%;
+            background: var(--text-light);
+        }
+
+        .status-dot.online {
+            background: var(--success);
+        }
+
+        .status-dot.offline {
+            background: var(--danger);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .field label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 0.35rem;
+        }
+
+        .field input,
+        .field select {
+            width: 100%;
+            padding: 0.7rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font: inherit;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-light);
+            padding: 2rem 1rem;
+        }
         
         /* 로딩 애니메이션 */
         .spinner {
@@ -415,7 +468,23 @@
             }
             
             .sidebar {
-                display: none;
+                position: relative;
+                height: auto;
+                padding: 1rem;
+                overflow: visible;
+            }
+
+            .logo {
+                margin-bottom: 1rem;
+            }
+
+            .menu-group {
+                margin-bottom: 1rem;
+            }
+
+            .menu-group .menu-item {
+                display: inline-flex;
+                margin-right: 0.5rem;
             }
             
             .main-content {
@@ -477,6 +546,10 @@
                 <div class="header-info">
                     <div>관리자 모드</div>
                     <div id="current-time"></div>
+                    <div class="status-line">
+                        <span id="api-status-dot" class="status-dot"></span>
+                        <span id="api-status-text">API 확인 중</span>
+                    </div>
                 </div>
             </div>
             
@@ -585,224 +658,472 @@
                     </div>
                 </div>
             </div>
+
+            <div id="employees-page" class="page" style="display: none;">
+                <div class="section">
+                    <h2>직원 관리</h2>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="employee-name">직원명</label>
+                            <input id="employee-name" type="text" placeholder="예: 김휘원">
+                        </div>
+                        <div class="field">
+                            <label for="employee-department">부서</label>
+                            <input id="employee-department" type="text" placeholder="예: 사무행정팀">
+                        </div>
+                        <div class="field">
+                            <label for="employee-position">직위</label>
+                            <input id="employee-position" type="text" placeholder="예: 간사">
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="add-employee-btn">직원 추가</button>
+                        <button class="btn btn-outline" id="refresh-employees-btn">새로고침</button>
+                    </div>
+                    <div id="employees-result" class="result-area"></div>
+                </div>
+            </div>
+
+            <div id="leave-page" class="page" style="display: none;">
+                <div class="section">
+                    <h2>휴가 관리</h2>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="leave-employee-id">직원 ID</label>
+                            <input id="leave-employee-id" type="number" min="1" placeholder="예: 1">
+                        </div>
+                        <div class="field">
+                            <label for="leave-year">조회 연도</label>
+                            <input id="leave-year" type="number" value="2026">
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="load-leave-btn">휴가 조회</button>
+                    </div>
+                    <div id="leave-result" class="result-area"></div>
+                </div>
+            </div>
+
+            <div id="payroll-page" class="page" style="display: none;">
+                <div class="section">
+                    <h2>급여 관리</h2>
+                    <div class="empty-state">급여 계산, 공제 항목, 명세서 출력 기능은 다음 구현 단계입니다.</div>
+                </div>
+            </div>
+
+            <div id="reports-page" class="page" style="display: none;">
+                <div class="section">
+                    <h2>보고서</h2>
+                    <div class="empty-state">휴가 현황, 급여 집계, 문서 처리 보고서 생성 기능은 다음 구현 단계입니다.</div>
+                </div>
+            </div>
+
+            <div id="settings-page" class="page" style="display: none;">
+                <div class="section">
+                    <h2>시스템 설정</h2>
+                    <div class="field">
+                        <label for="api-base-input">API 서버 주소</label>
+                        <input id="api-base-input" type="url" placeholder="예: https://your-api.example.com">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="save-api-base-btn">저장</button>
+                        <button class="btn btn-outline" id="reset-api-base-btn">기본값</button>
+                    </div>
+                    <div id="settings-result" class="result-area"></div>
+                </div>
+            </div>
         </main>
     </div>
     
     <script>
-        // 현재 시간 표시
+        const state = {
+            apiBase: localStorage.getItem('grcilApiBase') || window.location.origin
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function apiUrl(path) {
+            return `${state.apiBase.replace(/\/$/, '')}${path}`;
+        }
+
+        async function apiFetch(path, options = {}) {
+            const response = await fetch(apiUrl(path), options);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.error || `요청 실패 (${response.status})`);
+            }
+            return data;
+        }
+
+        function setApiStatus(online, text) {
+            const dot = document.getElementById('api-status-dot');
+            dot.classList.toggle('online', online);
+            dot.classList.toggle('offline', !online);
+            document.getElementById('api-status-text').textContent = text;
+        }
+
+        async function checkApiStatus() {
+            try {
+                const data = await apiFetch('/health');
+                setApiStatus(true, `API 연결됨 v${data.version || '-'}`);
+            } catch (error) {
+                setApiStatus(false, 'API 미연결');
+            }
+        }
+
         function updateTime() {
             const now = new Date();
-            document.getElementById('current-time').textContent = 
-                now.toLocaleDateString('ko-KR') + ' ' + 
+            document.getElementById('current-time').textContent =
+                now.toLocaleDateString('ko-KR') + ' ' +
                 now.toLocaleTimeString('ko-KR');
         }
-        updateTime();
-        setInterval(updateTime, 1000);
-        
-        // 페이지 전환
+
         function switchPage(pageName) {
-            document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
-            document.getElementById(pageName + '-page').style.display = 'block';
-            
-            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
-            document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
+            const target = document.getElementById(pageName + '-page');
+            if (!target) {
+                return;
+            }
+
+            document.querySelectorAll('.page').forEach(page => {
+                page.style.display = 'none';
+            });
+            target.style.display = 'block';
+
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.page === pageName);
+            });
+
+            if (pageName === 'employees') {
+                loadEmployees();
+            }
+            if (pageName === 'settings') {
+                document.getElementById('api-base-input').value = state.apiBase;
+            }
         }
-        
-        // 메뉴 클릭
-        document.querySelectorAll('.menu-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const page = item.dataset.page;
-                if (page === 'import') {
-                    // import 페이지 보이기
-                    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
-                    document.getElementById('import-page').style.display = 'block';
-                    item.classList.add('active');
-                } else {
-                    switchPage(page);
+
+        function renderError(target, error) {
+            target.innerHTML = `
+                <div class="alert alert-error">
+                    <div>${escapeHtml(error.message || error)}</div>
+                </div>
+            `;
+        }
+
+        function renderLoading(target, message) {
+            target.innerHTML = `
+                <div class="alert alert-success">
+                    <div style="font-weight: 600;">${escapeHtml(message)}</div>
+                </div>
+                <div style="text-align: center; margin: 2rem 0;">
+                    <div class="spinner"></div>
+                </div>
+            `;
+        }
+
+        function confidenceClass(value) {
+            if (value >= 0.85) return 'confidence-high';
+            if (value >= 0.6) return 'confidence-medium';
+            return 'confidence-low';
+        }
+
+        async function uploadFile(file, endpoint, target, renderer) {
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            renderLoading(target, `${file.name} 분석 중...`);
+
+            try {
+                const data = await apiFetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                renderer(data, target);
+                loadDocuments();
+                checkApiStatus();
+            } catch (error) {
+                renderError(target, error);
+                checkApiStatus();
+            }
+        }
+
+        function renderHWPXResult(data, target) {
+            const parsed = data.parsed_data || {};
+            const rows = Object.entries(parsed).map(([key, value]) => `
+                <tr>
+                    <td><strong>${escapeHtml(key)}</strong></td>
+                    <td>${escapeHtml(value)}</td>
+                </tr>
+            `).join('');
+            const confidence = Number(data.confidence || 0);
+
+            target.innerHTML = `
+                <div class="alert alert-success">
+                    <div>파일 분석 완료: ${escapeHtml(data.filename)}</div>
+                </div>
+                <div class="parse-result">
+                    <div class="result-header">
+                        <div class="result-title">HWPX 분석 결과</div>
+                        <span class="confidence-badge ${confidenceClass(confidence)}">신뢰도 ${Math.round(confidence * 100)}%</span>
+                    </div>
+                    <table class="data-table">
+                        <tbody>${rows || '<tr><td class="empty-state">인식된 항목이 없습니다.</td></tr>'}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderExcelResult(data, target) {
+            const sheets = Object.entries(data.recognized_sheets || {});
+            const rows = sheets.map(([type, info]) => `
+                <tr>
+                    <td>${escapeHtml(type)}</td>
+                    <td>${escapeHtml(info.sheet_name)}</td>
+                    <td>${escapeHtml(info.rows)}</td>
+                    <td>${escapeHtml((info.columns || []).join(', '))}</td>
+                    <td>${Math.round(Number(info.confidence || 0) * 100)}%</td>
+                </tr>
+            `).join('');
+            const confidence = Number(data.confidence || 0);
+
+            target.innerHTML = `
+                <div class="alert alert-success">
+                    <div>Excel 분석 완료: ${escapeHtml(data.filename)}</div>
+                </div>
+                <div class="parse-result">
+                    <div class="result-header">
+                        <div class="result-title">인식된 시트</div>
+                        <span class="confidence-badge ${confidenceClass(confidence)}">신뢰도 ${Math.round(confidence * 100)}%</span>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>유형</th>
+                                <th>시트명</th>
+                                <th>행 수</th>
+                                <th>열</th>
+                                <th>신뢰도</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="5" class="empty-state">인식된 시트가 없습니다.</td></tr>'}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function loadDocuments() {
+            const target = document.getElementById('history-body');
+            if (!target) return;
+
+            try {
+                const data = await apiFetch('/api/documents?limit=20');
+                const rows = (data.documents || []).map(doc => `
+                    <tr>
+                        <td>${escapeHtml(doc.created_at)}</td>
+                        <td>${escapeHtml(doc.filename)}</td>
+                        <td>${escapeHtml(doc.file_type)}</td>
+                        <td>${escapeHtml(doc.status)}</td>
+                        <td>문서 #${escapeHtml(doc.id)}</td>
+                    </tr>
+                `).join('');
+                target.innerHTML = rows || `
+                    <tr>
+                        <td colspan="5" class="empty-state">아직 변환된 파일이 없습니다.</td>
+                    </tr>
+                `;
+            } catch (error) {
+                target.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="empty-state">API 연결 후 이력을 불러올 수 있습니다.</td>
+                    </tr>
+                `;
+            }
+        }
+
+        async function loadEmployees() {
+            const target = document.getElementById('employees-result');
+            renderLoading(target, '직원 목록을 불러오는 중...');
+
+            try {
+                const data = await apiFetch('/api/employees');
+                const rows = (data.employees || []).map(employee => `
+                    <tr>
+                        <td>${escapeHtml(employee.id)}</td>
+                        <td>${escapeHtml(employee.name)}</td>
+                        <td>${escapeHtml(employee.department || '-')}</td>
+                        <td>${escapeHtml(employee.position || '-')}</td>
+                        <td>${escapeHtml(employee.status || '-')}</td>
+                    </tr>
+                `).join('');
+
+                target.innerHTML = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>직원명</th>
+                                <th>부서</th>
+                                <th>직위</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="5" class="empty-state">등록된 직원이 없습니다.</td></tr>'}</tbody>
+                    </table>
+                `;
+            } catch (error) {
+                renderError(target, error);
+            }
+        }
+
+        async function addEmployee() {
+            const target = document.getElementById('employees-result');
+            const name = document.getElementById('employee-name').value.trim();
+            const department = document.getElementById('employee-department').value.trim();
+            const position = document.getElementById('employee-position').value.trim();
+
+            if (!name) {
+                renderError(target, '직원명을 입력해주세요.');
+                return;
+            }
+
+            try {
+                await apiFetch('/api/employees', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, department, position })
+                });
+                document.getElementById('employee-name').value = '';
+                document.getElementById('employee-department').value = '';
+                document.getElementById('employee-position').value = '';
+                await loadEmployees();
+            } catch (error) {
+                renderError(target, error);
+            }
+        }
+
+        async function loadLeaveRecords() {
+            const target = document.getElementById('leave-result');
+            const employeeId = document.getElementById('leave-employee-id').value;
+            const year = document.getElementById('leave-year').value;
+
+            if (!employeeId || !year) {
+                renderError(target, '직원 ID와 조회 연도를 입력해주세요.');
+                return;
+            }
+
+            renderLoading(target, '휴가 기록을 불러오는 중...');
+
+            try {
+                const data = await apiFetch(`/api/leave-records?employee_id=${encodeURIComponent(employeeId)}&year=${encodeURIComponent(year)}`);
+                const rows = (data.records || []).map(record => `
+                    <tr>
+                        <td>${escapeHtml(record.start_date)}</td>
+                        <td>${escapeHtml(record.end_date)}</td>
+                        <td>${escapeHtml(record.days)}</td>
+                        <td>${escapeHtml(record.type)}</td>
+                        <td>${escapeHtml(record.status)}</td>
+                    </tr>
+                `).join('');
+
+                target.innerHTML = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>시작일</th>
+                                <th>종료일</th>
+                                <th>일수</th>
+                                <th>유형</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="5" class="empty-state">휴가 기록이 없습니다.</td></tr>'}</tbody>
+                    </table>
+                `;
+            } catch (error) {
+                renderError(target, error);
+            }
+        }
+
+        function wireUpload(dropZone, input, handler) {
+            dropZone.addEventListener('click', () => input.click());
+            dropZone.addEventListener('dragover', event => {
+                event.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+            dropZone.addEventListener('drop', event => {
+                event.preventDefault();
+                dropZone.classList.remove('drag-over');
+                handler(event.dataTransfer.files[0]);
+            });
+            input.addEventListener('change', event => {
+                if (event.target.files.length > 0) {
+                    handler(event.target.files[0]);
                 }
             });
+        }
+
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', () => switchPage(item.dataset.page));
         });
-        
-        // 탭 전환
+
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const tabName = tab.dataset.tab;
-                
-                // 탭 활성화
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
                 tab.classList.add('active');
-                
-                // 콘텐츠 전환
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.style.display = 'none';
                 });
                 document.getElementById(tabName + '-tab').style.display = 'block';
+                if (tabName === 'history') {
+                    loadDocuments();
+                }
             });
         });
-        
-        // HWPX 업로드 처리
-        const hwpxUpload = document.getElementById('hwpx-upload');
-        const hwpxInput = document.getElementById('hwpx-input');
-        const hwpxResult = document.getElementById('hwpx-result');
-        
-        hwpxUpload.addEventListener('click', () => hwpxInput.click());
-        
-        hwpxUpload.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            hwpxUpload.classList.add('drag-over');
+
+        wireUpload(
+            document.getElementById('hwpx-upload'),
+            document.getElementById('hwpx-input'),
+            file => uploadFile(file, '/api/parse/hwpx', document.getElementById('hwpx-result'), renderHWPXResult)
+        );
+
+        wireUpload(
+            document.getElementById('excel-upload'),
+            document.getElementById('excel-input'),
+            file => uploadFile(file, '/api/parse/excel', document.getElementById('excel-result'), renderExcelResult)
+        );
+
+        document.getElementById('add-employee-btn').addEventListener('click', addEmployee);
+        document.getElementById('refresh-employees-btn').addEventListener('click', loadEmployees);
+        document.getElementById('load-leave-btn').addEventListener('click', loadLeaveRecords);
+        document.getElementById('save-api-base-btn').addEventListener('click', () => {
+            const value = document.getElementById('api-base-input').value.trim() || window.location.origin;
+            state.apiBase = value;
+            localStorage.setItem('grcilApiBase', value);
+            document.getElementById('settings-result').innerHTML = '<div class="alert alert-success"><div>API 서버 주소를 저장했습니다.</div></div>';
+            checkApiStatus();
         });
-        
-        hwpxUpload.addEventListener('dragleave', () => {
-            hwpxUpload.classList.remove('drag-over');
+        document.getElementById('reset-api-base-btn').addEventListener('click', () => {
+            state.apiBase = window.location.origin;
+            localStorage.removeItem('grcilApiBase');
+            document.getElementById('api-base-input').value = state.apiBase;
+            checkApiStatus();
         });
-        
-        hwpxUpload.addEventListener('drop', (e) => {
-            e.preventDefault();
-            hwpxUpload.classList.remove('drag-over');
-            handleHWPXFile(e.dataTransfer.files[0]);
-        });
-        
-        hwpxInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleHWPXFile(e.target.files[0]);
-            }
-        });
-        
-        function handleHWPXFile(file) {
-            hwpxResult.innerHTML = `
-                <div class="alert alert-success">
-                    <div style="font-weight: 600;">✓ 파일 인식 중...</div>
-                </div>
-                <div style="text-align: center; margin: 2rem 0;">
-                    <div class="spinner"></div>
-                </div>
-            `;
-            
-            // 시뮬레이션 (실제로는 백엔드로 전송)
-            setTimeout(() => {
-                hwpxResult.innerHTML = `
-                    <div class="alert alert-success">
-                        <div>✓ 파일 분석 완료: ${file.name}</div>
-                    </div>
-                    <div class="parse-result">
-                        <div class="result-header">
-                            <div class="result-title">휴가신청서 분석 결과</div>
-                            <span class="confidence-badge confidence-high">신뢰도 95%</span>
-                        </div>
-                        <table class="data-table">
-                            <tr>
-                                <td><strong>성명</strong></td>
-                                <td>김휘원</td>
-                            </tr>
-                            <tr>
-                                <td><strong>소속</strong></td>
-                                <td>사무행정팀</td>
-                            </tr>
-                            <tr>
-                                <td><strong>직위</strong></td>
-                                <td>간사</td>
-                            </tr>
-                            <tr>
-                                <td><strong>휴가기간</strong></td>
-                                <td>2026-05-01 ~ 2026-05-03 (3일)</td>
-                            </tr>
-                            <tr>
-                                <td><strong>사유</strong></td>
-                                <td>개인 사유</td>
-                            </tr>
-                        </table>
-                        <div class="button-group">
-                            <button class="btn btn-primary">✓ 데이터 저장</button>
-                            <button class="btn btn-outline">수정</button>
-                        </div>
-                    </div>
-                `;
-            }, 2000);
-        }
-        
-        // Excel 업로드 처리
-        const excelUpload = document.getElementById('excel-upload');
-        const excelInput = document.getElementById('excel-input');
-        const excelResult = document.getElementById('excel-result');
-        
-        excelUpload.addEventListener('click', () => excelInput.click());
-        
-        excelUpload.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            excelUpload.classList.add('drag-over');
-        });
-        
-        excelUpload.addEventListener('dragleave', () => {
-            excelUpload.classList.remove('drag-over');
-        });
-        
-        excelUpload.addEventListener('drop', (e) => {
-            e.preventDefault();
-            excelUpload.classList.remove('drag-over');
-            handleExcelFile(e.dataTransfer.files[0]);
-        });
-        
-        excelInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleExcelFile(e.target.files[0]);
-            }
-        });
-        
-        function handleExcelFile(file) {
-            excelResult.innerHTML = `
-                <div class="alert alert-success">
-                    <div style="font-weight: 600;">✓ 파일 분석 중...</div>
-                </div>
-                <div style="text-align: center; margin: 2rem 0;">
-                    <div class="spinner"></div>
-                </div>
-            `;
-            
-            setTimeout(() => {
-                excelResult.innerHTML = `
-                    <div class="alert alert-success">
-                        <div>✓ Excel 시트 자동 인식: ${file.name}</div>
-                    </div>
-                    <div class="parse-result">
-                        <div class="result-header">
-                            <div class="result-title">Sheet 1: 휴가현황</div>
-                            <span class="confidence-badge confidence-high">신뢰도 92%</span>
-                        </div>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>직원명</th>
-                                    <th>휴가시작</th>
-                                    <th>휴가종료</th>
-                                    <th>일수</th>
-                                    <th>유형</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>김휘원</td>
-                                    <td>2026-05-01</td>
-                                    <td>2026-05-03</td>
-                                    <td>3</td>
-                                    <td>연차</td>
-                                </tr>
-                                <tr>
-                                    <td>노현숙</td>
-                                    <td>2026-05-02</td>
-                                    <td>2026-05-02</td>
-                                    <td>1</td>
-                                    <td>연차</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div class="button-group">
-                            <button class="btn btn-primary">✓ 시스템에 동기화</button>
-                            <button class="btn btn-outline">미리보기</button>
-                        </div>
-                    </div>
-                `;
-            }, 2000);
-        }
+
+        updateTime();
+        setInterval(updateTime, 1000);
+        checkApiStatus();
     </script>
 </body>
 </html>

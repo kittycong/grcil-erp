@@ -41,6 +41,18 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+@app.route('/', methods=['GET'])
+def dashboard():
+    """관리 대시보드 화면"""
+    return send_file('grcil_erp_dashboard.html')
+
+
+@app.route('/dashboard', methods=['GET'])
+def dashboard_alias():
+    """관리 대시보드 화면 별칭"""
+    return send_file('grcil_erp_dashboard.html')
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """헬스 체크"""
@@ -222,11 +234,11 @@ def leave_records():
             
             if not employee_id or not year:
                 return jsonify({'error': 'employee_id와 year 파라미터가 필요합니다'}), 400
-            
-            # DB 쿼리 (구현 필요)
+
+            records = db.list_leave_records(int(employee_id), int(year))
             return jsonify({
                 'status': 'success',
-                'records': []  # DB에서 조회
+                'records': records
             })
             
         except Exception as e:
@@ -310,7 +322,7 @@ def employees():
     if request.method == 'GET':
         return jsonify({
             'status': 'success',
-            'employees': []
+            'employees': db.list_employees()
         })
     
     elif request.method == 'POST':
@@ -331,6 +343,21 @@ def employees():
             
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/documents', methods=['GET'])
+def documents():
+    """문서 처리 이력 조회"""
+    try:
+        limit = int(request.args.get('limit', 50))
+        limit = max(1, min(limit, 200))
+        return jsonify({
+            'status': 'success',
+            'documents': db.list_documents(limit=limit)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/system/info', methods=['GET'])
