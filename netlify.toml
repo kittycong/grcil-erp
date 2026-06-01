@@ -1,0 +1,9 @@
+[build]
+  base = "grcil-erp-complete"
+  command = "mkdir -p public && cp grcil_erp_dashboard.html public/index.html"
+  publish = "public"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

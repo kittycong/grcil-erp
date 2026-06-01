@@ -1,0 +1,57 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: grcil-erp-complete
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest flake8
+
+      - name: Lint syntax-critical issues
+        run: |
+          flake8 grcil-erp-complete --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Smoke import backend
+        working-directory: grcil-erp-complete
+        run: |
+          python -m py_compile app.py grcil_database.py excel_parser.py hwpx_parser.py
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static dashboard
+        run: |
+          mkdir -p dist
+          cp grcil-erp-complete/grcil_erp_dashboard.html dist/index.html
+          cp grcil-erp-complete/*.md dist/
+          cp grcil-erp-complete/*.py dist/
+          cp grcil-erp-complete/requirements.txt dist/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist

@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: grcil-erp-api
+    env: python
+    plan: free
+    rootDir: grcil-erp-complete
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.13
+      - key: FLASK_ENV
+        value: production
