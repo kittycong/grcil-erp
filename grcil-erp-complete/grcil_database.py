@@ -10,7 +10,7 @@
 
 import sqlite3
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 
 
@@ -285,6 +285,43 @@ class GroCILDatabase:
         finally:
             conn.close()
 
+    def update_leave_status(self, record_id: int, status: str,
+                            approver_name: Optional[str] = None) -> bool:
+        """휴가 기록 승인 상태 변경"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                UPDATE leave_records
+                SET status = ?,
+                    approver_name = COALESCE(?, approver_name),
+                    approval_date = CASE
+                        WHEN ? IN ('approved', 'rejected') THEN date('now')
+                        ELSE approval_date
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (status, approver_name, status, record_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+        finally:
+            conn.close()
+
+    def delete_leave_record(self, record_id: int) -> bool:
+        """휴가 기록 삭제"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('DELETE FROM leave_records WHERE id = ?', (record_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+        finally:
+            conn.close()
+
     def list_employees(self) -> List[Dict[str, Any]]:
         """직원 목록 조회"""
         conn = sqlite3.connect(self.db_path)
@@ -333,6 +370,88 @@ class GroCILDatabase:
                 {where_clause}
                 ORDER BY lr.start_date DESC, lr.id DESC
             ''', values)
+            return [dict(row) for row in cursor.fetchall()]
+
+        finally:
+            conn.close()
+
+    def leave_summary(self, year: int) -> List[Dict[str, Any]]:
+        """직원별 연차 생성/사용/잔여 요약"""
+        employees = self.list_employees()
+        records = self.list_leave_records(year=year)
+        balances = self.list_leave_balances(year)
+        balance_by_employee = {
+            row['employee_id']: row
+            for row in balances
+        }
+
+        summary = []
+        for employee in employees:
+            employee_id = employee['id']
+            balance = balance_by_employee.get(employee_id)
+            accrued = (
+                float(balance['accrued_days'])
+                if balance and balance.get('accrued_days') is not None
+                else calculate_annual_leave(employee.get('join_date'), year)
+            )
+            employee_records = [
+                record for record in records
+                if record['employee_id'] == employee_id
+            ]
+            active_records = [
+                record for record in employee_records
+                if record.get('status') not in ('rejected', 'cancelled')
+            ]
+            approved_records = [
+                record for record in active_records
+                if record.get('status') == 'approved'
+            ]
+            planned_days = round(sum(float(record.get('days') or 0) for record in active_records), 2)
+            used_days = round(sum(float(record.get('days') or 0) for record in approved_records), 2)
+            remaining_days = round(accrued - planned_days, 2)
+            usage_percent = round((planned_days / accrued) * 100) if accrued else 0
+            alert_level = (
+                'urgent' if remaining_days <= 0
+                else 'warning' if remaining_days <= 5 or usage_percent <= 40
+                else 'safe'
+            )
+            alert_label = (
+                '소진' if remaining_days <= 0
+                else '확인 필요' if alert_level == 'warning'
+                else '안정'
+            )
+
+            summary.append({
+                'employee_id': employee_id,
+                'employee_name': employee['name'],
+                'department': employee.get('department'),
+                'position': employee.get('position'),
+                'join_date': employee.get('join_date'),
+                'accrued_days': accrued,
+                'used_days': used_days,
+                'planned_days': planned_days,
+                'remaining_days': remaining_days,
+                'usage_percent': usage_percent,
+                'record_count': len(employee_records),
+                'pending_count': len([r for r in employee_records if r.get('status') == 'pending']),
+                'alert_level': alert_level,
+                'alert_label': alert_label
+            })
+
+        return summary
+
+    def list_leave_balances(self, year: int) -> List[Dict[str, Any]]:
+        """연도별 수동 연차 설정 목록"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                SELECT *
+                FROM annual_leave_balance
+                WHERE year = ?
+            ''', (year,))
             return [dict(row) for row in cursor.fetchall()]
 
         finally:
@@ -418,6 +537,27 @@ class GroCILDatabase:
             
         finally:
             conn.close()
+
+
+def calculate_annual_leave(join_date: Optional[str], year: int) -> float:
+    """guro_huga 기준 연차 발생 계산: 1년 미만 11일, 이후 15일 + 2년마다 1일, 최대 25일."""
+    if not join_date:
+        return 0
+
+    try:
+        joined = date.fromisoformat(str(join_date)[:10])
+    except ValueError:
+        return 0
+
+    period_start = date(int(year), 1, 1)
+    years = period_start.year - joined.year
+    if (period_start.month, period_start.day) < (joined.month, joined.day):
+        years -= 1
+
+    if years < 1:
+        return 11
+
+    return min(25, 15 + max(0, (years - 1) // 2))
 
 
 # 사용 예제

@@ -675,6 +675,10 @@
                             <label for="employee-position">직위</label>
                             <input id="employee-position" type="text" placeholder="예: 간사">
                         </div>
+                        <div class="field">
+                            <label for="employee-join-date">입사일</label>
+                            <input id="employee-join-date" type="date">
+                        </div>
                     </div>
                     <div class="button-group">
                         <button class="btn btn-primary" id="add-employee-btn">직원 추가</button>
@@ -689,17 +693,72 @@
                     <h2>휴가 관리</h2>
                     <div class="form-grid">
                         <div class="field">
-                            <label for="leave-employee-id">직원 ID</label>
-                            <input id="leave-employee-id" type="number" min="1" placeholder="예: 1">
+                            <label for="leave-year">기준 연도</label>
+                            <input id="leave-year" type="number" value="2026">
                         </div>
                         <div class="field">
-                            <label for="leave-year">조회 연도</label>
-                            <input id="leave-year" type="number" value="2026">
+                            <label for="leave-filter-employee">직원 필터</label>
+                            <select id="leave-filter-employee">
+                                <option value="">전체 직원</option>
+                            </select>
                         </div>
                     </div>
                     <div class="button-group">
-                        <button class="btn btn-primary" id="load-leave-btn">휴가 조회</button>
+                        <button class="btn btn-primary" id="load-leave-btn">현황 새로고침</button>
                     </div>
+                    <div id="leave-summary" class="result-area"></div>
+                </div>
+
+                <div class="section">
+                    <h2>휴가 기록 추가</h2>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="leave-employee-id">직원</label>
+                            <select id="leave-employee-id"></select>
+                        </div>
+                        <div class="field">
+                            <label for="leave-start-date">시작일</label>
+                            <input id="leave-start-date" type="date">
+                        </div>
+                        <div class="field">
+                            <label for="leave-end-date">종료일</label>
+                            <input id="leave-end-date" type="date">
+                        </div>
+                        <div class="field">
+                            <label for="leave-days">일수</label>
+                            <input id="leave-days" type="number" min="0.25" step="0.25" value="1">
+                        </div>
+                        <div class="field">
+                            <label for="leave-type">유형</label>
+                            <select id="leave-type">
+                                <option value="연차">연차</option>
+                                <option value="반차">반차</option>
+                                <option value="반반차">반반차</option>
+                                <option value="대체휴가">대체휴가</option>
+                                <option value="병가">병가</option>
+                                <option value="기타">기타</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="leave-status">상태</label>
+                            <select id="leave-status">
+                                <option value="pending">대기</option>
+                                <option value="approved">승인</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field" style="margin-top: 1rem;">
+                        <label for="leave-reason">사유/메모</label>
+                        <input id="leave-reason" type="text" placeholder="예: 개인 사유">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="add-leave-btn">휴가 기록 추가</button>
+                    </div>
+                    <div id="leave-form-result" class="result-area"></div>
+                </div>
+
+                <div class="section">
+                    <h2>휴가 기록</h2>
                     <div id="leave-result" class="result-area"></div>
                 </div>
             </div>
@@ -737,7 +796,8 @@
     
     <script>
         const state = {
-            apiBase: localStorage.getItem('grcilApiBase') || window.location.origin
+            apiBase: localStorage.getItem('grcilApiBase') || window.location.origin,
+            employees: []
         };
 
         function escapeHtml(value) {
@@ -803,6 +863,9 @@
 
             if (pageName === 'employees') {
                 loadEmployees();
+            }
+            if (pageName === 'leave') {
+                loadLeaveManagement();
             }
             if (pageName === 'settings') {
                 document.getElementById('api-base-input').value = state.apiBase;
@@ -954,12 +1017,14 @@
 
             try {
                 const data = await apiFetch('/api/employees');
+                state.employees = data.employees || [];
                 const rows = (data.employees || []).map(employee => `
                     <tr>
                         <td>${escapeHtml(employee.id)}</td>
                         <td>${escapeHtml(employee.name)}</td>
                         <td>${escapeHtml(employee.department || '-')}</td>
                         <td>${escapeHtml(employee.position || '-')}</td>
+                        <td>${escapeHtml(employee.join_date || '-')}</td>
                         <td>${escapeHtml(employee.status || '-')}</td>
                     </tr>
                 `).join('');
@@ -972,10 +1037,11 @@
                                 <th>직원명</th>
                                 <th>부서</th>
                                 <th>직위</th>
+                                <th>입사일</th>
                                 <th>상태</th>
                             </tr>
                         </thead>
-                        <tbody>${rows || '<tr><td colspan="5" class="empty-state">등록된 직원이 없습니다.</td></tr>'}</tbody>
+                        <tbody>${rows || '<tr><td colspan="6" class="empty-state">등록된 직원이 없습니다.</td></tr>'}</tbody>
                     </table>
                 `;
             } catch (error) {
@@ -988,6 +1054,7 @@
             const name = document.getElementById('employee-name').value.trim();
             const department = document.getElementById('employee-department').value.trim();
             const position = document.getElementById('employee-position').value.trim();
+            const joinDate = document.getElementById('employee-join-date').value;
 
             if (!name) {
                 renderError(target, '직원명을 입력해주세요.');
@@ -998,12 +1065,85 @@
                 await apiFetch('/api/employees', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, department, position })
+                    body: JSON.stringify({ name, department, position, join_date: joinDate })
                 });
                 document.getElementById('employee-name').value = '';
                 document.getElementById('employee-department').value = '';
                 document.getElementById('employee-position').value = '';
+                document.getElementById('employee-join-date').value = '';
                 await loadEmployees();
+            } catch (error) {
+                renderError(target, error);
+            }
+        }
+
+        async function loadLeaveManagement() {
+            await ensureEmployees();
+            populateLeaveEmployeeOptions();
+            await Promise.all([loadLeaveSummary(), loadLeaveRecords()]);
+        }
+
+        async function ensureEmployees() {
+            if (state.employees.length) return;
+            const data = await apiFetch('/api/employees');
+            state.employees = data.employees || [];
+        }
+
+        function populateLeaveEmployeeOptions() {
+            const options = state.employees.map(employee => `
+                <option value="${escapeHtml(employee.id)}">${escapeHtml(employee.name)}${employee.department ? ` · ${escapeHtml(employee.department)}` : ''}</option>
+            `).join('');
+            document.getElementById('leave-employee-id').innerHTML = options || '<option value="">직원 없음</option>';
+            document.getElementById('leave-filter-employee').innerHTML = '<option value="">전체 직원</option>' + options;
+        }
+
+        async function loadLeaveSummary() {
+            const target = document.getElementById('leave-summary');
+            const year = document.getElementById('leave-year').value;
+            renderLoading(target, '휴가 요약을 불러오는 중...');
+
+            try {
+                const data = await apiFetch(`/api/leave-summary?year=${encodeURIComponent(year)}`);
+                const totals = data.totals || {};
+                const rows = (data.summary || []).map(item => `
+                    <tr>
+                        <td>${escapeHtml(item.employee_name)}</td>
+                        <td>${escapeHtml(item.department || '-')}</td>
+                        <td>${Number(item.accrued_days || 0).toFixed(1)}</td>
+                        <td>${Number(item.planned_days || 0).toFixed(1)}</td>
+                        <td>${Number(item.used_days || 0).toFixed(1)}</td>
+                        <td>${Number(item.remaining_days || 0).toFixed(1)}</td>
+                        <td>${escapeHtml(item.usage_percent)}%</td>
+                        <td>${escapeHtml(item.pending_count)}</td>
+                        <td>${escapeHtml(item.alert_label)}</td>
+                    </tr>
+                `).join('');
+
+                target.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                        <div class="parse-result"><strong>${escapeHtml(totals.employees || 0)}</strong><br>직원 수</div>
+                        <div class="parse-result"><strong>${Number(totals.accrued_days || 0).toFixed(1)}일</strong><br>총 발생</div>
+                        <div class="parse-result"><strong>${Number(totals.planned_days || 0).toFixed(1)}일</strong><br>총 사용/예정</div>
+                        <div class="parse-result"><strong>${Number(totals.remaining_days || 0).toFixed(1)}일</strong><br>총 잔여</div>
+                        <div class="parse-result"><strong>${escapeHtml(totals.pending_count || 0)}건</strong><br>승인 대기</div>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>직원</th>
+                                <th>부서</th>
+                                <th>발생</th>
+                                <th>사용/예정</th>
+                                <th>승인 사용</th>
+                                <th>잔여</th>
+                                <th>사용률</th>
+                                <th>대기</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="9" class="empty-state">요약할 직원이 없습니다.</td></tr>'}</tbody>
+                    </table>
+                `;
             } catch (error) {
                 renderError(target, error);
             }
@@ -1011,25 +1151,34 @@
 
         async function loadLeaveRecords() {
             const target = document.getElementById('leave-result');
-            const employeeId = document.getElementById('leave-employee-id').value;
+            const employeeId = document.getElementById('leave-filter-employee').value;
             const year = document.getElementById('leave-year').value;
 
-            if (!employeeId || !year) {
-                renderError(target, '직원 ID와 조회 연도를 입력해주세요.');
+            if (!year) {
+                renderError(target, '조회 연도를 입력해주세요.');
                 return;
             }
 
             renderLoading(target, '휴가 기록을 불러오는 중...');
 
             try {
-                const data = await apiFetch(`/api/leave-records?employee_id=${encodeURIComponent(employeeId)}&year=${encodeURIComponent(year)}`);
+                const params = new URLSearchParams({ year });
+                if (employeeId) params.set('employee_id', employeeId);
+                const data = await apiFetch(`/api/leave-records?${params.toString()}`);
                 const rows = (data.records || []).map(record => `
                     <tr>
+                        <td>${escapeHtml(record.employee_name || record.employee_id)}</td>
                         <td>${escapeHtml(record.start_date)}</td>
                         <td>${escapeHtml(record.end_date)}</td>
                         <td>${escapeHtml(record.days)}</td>
                         <td>${escapeHtml(record.type)}</td>
                         <td>${escapeHtml(record.status)}</td>
+                        <td>${escapeHtml(record.reason || '-')}</td>
+                        <td>
+                            <button class="btn btn-outline" data-leave-status="${escapeHtml(record.id)}" data-status="approved">승인</button>
+                            <button class="btn btn-outline" data-leave-status="${escapeHtml(record.id)}" data-status="rejected">반려</button>
+                            <button class="btn btn-outline" data-leave-delete="${escapeHtml(record.id)}">삭제</button>
+                        </td>
                     </tr>
                 `).join('');
 
@@ -1037,19 +1186,84 @@
                     <table class="data-table">
                         <thead>
                             <tr>
+                                <th>직원</th>
                                 <th>시작일</th>
                                 <th>종료일</th>
                                 <th>일수</th>
                                 <th>유형</th>
                                 <th>상태</th>
+                                <th>사유</th>
+                                <th>작업</th>
                             </tr>
                         </thead>
-                        <tbody>${rows || '<tr><td colspan="5" class="empty-state">휴가 기록이 없습니다.</td></tr>'}</tbody>
+                        <tbody>${rows || '<tr><td colspan="8" class="empty-state">휴가 기록이 없습니다.</td></tr>'}</tbody>
                     </table>
                 `;
+                wireLeaveRecordActions();
             } catch (error) {
                 renderError(target, error);
             }
+        }
+
+        async function addLeaveRecord() {
+            const target = document.getElementById('leave-form-result');
+            const payload = {
+                employee_id: Number(document.getElementById('leave-employee-id').value),
+                start_date: document.getElementById('leave-start-date').value,
+                end_date: document.getElementById('leave-end-date').value,
+                days: Number(document.getElementById('leave-days').value || 0),
+                type: document.getElementById('leave-type').value,
+                status: document.getElementById('leave-status').value,
+                reason: document.getElementById('leave-reason').value.trim()
+            };
+
+            if (!payload.employee_id || !payload.start_date || !payload.end_date || payload.days <= 0) {
+                renderError(target, '직원, 기간, 휴가 일수를 확인해주세요.');
+                return;
+            }
+
+            try {
+                await apiFetch('/api/leave-records', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                document.getElementById('leave-reason').value = '';
+                target.innerHTML = '<div class="alert alert-success"><div>휴가 기록을 추가했습니다.</div></div>';
+                await Promise.all([loadLeaveSummary(), loadLeaveRecords()]);
+            } catch (error) {
+                renderError(target, error);
+            }
+        }
+
+        function wireLeaveRecordActions() {
+            document.querySelectorAll('[data-leave-status]').forEach(button => {
+                button.addEventListener('click', async () => {
+                    await updateLeaveStatus(button.dataset.leaveStatus, button.dataset.status);
+                });
+            });
+            document.querySelectorAll('[data-leave-delete]').forEach(button => {
+                button.addEventListener('click', async () => {
+                    if (!confirm('이 휴가 기록을 삭제할까요?')) return;
+                    await deleteLeaveRecord(button.dataset.leaveDelete);
+                });
+            });
+        }
+
+        async function updateLeaveStatus(recordId, status) {
+            await apiFetch(`/api/leave-records/${encodeURIComponent(recordId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, approver_name: '관리자' })
+            });
+            await Promise.all([loadLeaveSummary(), loadLeaveRecords()]);
+        }
+
+        async function deleteLeaveRecord(recordId) {
+            await apiFetch(`/api/leave-records/${encodeURIComponent(recordId)}`, {
+                method: 'DELETE'
+            });
+            await Promise.all([loadLeaveSummary(), loadLeaveRecords()]);
         }
 
         function wireUpload(dropZone, input, handler) {
@@ -1106,7 +1320,10 @@
 
         document.getElementById('add-employee-btn').addEventListener('click', addEmployee);
         document.getElementById('refresh-employees-btn').addEventListener('click', loadEmployees);
-        document.getElementById('load-leave-btn').addEventListener('click', loadLeaveRecords);
+        document.getElementById('load-leave-btn').addEventListener('click', loadLeaveManagement);
+        document.getElementById('add-leave-btn').addEventListener('click', addLeaveRecord);
+        document.getElementById('leave-filter-employee').addEventListener('change', loadLeaveRecords);
+        document.getElementById('leave-year').addEventListener('change', loadLeaveManagement);
         document.getElementById('save-api-base-btn').addEventListener('click', () => {
             const value = document.getElementById('api-base-input').value.trim() || window.location.origin;
             state.apiBase = value;
